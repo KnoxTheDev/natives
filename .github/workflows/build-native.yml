@@ -111,7 +111,7 @@ jobs:
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: r26d # Pinned for stability
+          ndk-version: r27c # Pinned for stability
 
       - name: 🧱 Build static OpenSSL (Linux)
         if: matrix.os == 'linux'
@@ -183,6 +183,7 @@ jobs:
           COMPILER="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.ndk_toolchain_prefix }}${{ matrix.api_level }}-clang++"
 
           $COMPILER -std=c++17 -fPIC -shared native.cpp \
+            -static-libgcc -static-libstdc++ \
             -I"$ANDROID_NDK_ROOT/sysroot/usr/include" \
             -I"$OPENSSL_ANDROID_ROOT/include" \
             "$OPENSSL_ANDROID_ROOT/lib/libssl.a" "$OPENSSL_ANDROID_ROOT/lib/libcrypto.a" \
