@@ -152,7 +152,7 @@ jobs:
             ${PREFIX}g++ -std=c++17 -fPIC -shared native.cpp \
               -I"$JNI_INC" -I"$JNI_OS_INC" \
               -I"$OPENSSL_ROOT/include" \
-              -L"$OPENSSL_ROOT/lib" -lssl -lcrypto -lz -o "${{ matrix.output }}"
+              "$OPENSSL_ROOT/lib/libssl.a" "$OPENSSL_ROOT/lib/libcrypto.a" -lz -o "${{ matrix.output }}"
           else
             OPENSSL_STATIC_ROOT="$GITHUB_WORKSPACE/openssl-static"
             ${PREFIX}g++ -std=c++17 -fPIC -shared native.cpp \
