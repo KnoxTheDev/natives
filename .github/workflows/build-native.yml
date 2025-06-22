@@ -166,7 +166,7 @@ jobs:
         if: matrix.os == 'windows'
         shell: cmd
         run: |
-          FOR /F "usebackq tokens=*" %%I IN ("%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath) DO SET VS_PATH=%%I
+          FOR /F "usebackq tokens=*" %%I IN (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) DO SET VS_PATH=%%I
           CALL "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.arch }}
           SET VCPKG_ROOT=%CD%\vcpkg
           SET INCLUDE=%VCPKG_ROOT%\installed\${{ matrix.vcpkg_triplet }}\include;%INCLUDE%
