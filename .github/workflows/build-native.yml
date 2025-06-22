@@ -15,7 +15,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux Builds
           - os: linux
             arch: x64
             runner: ubuntu-24.04
@@ -27,7 +26,6 @@ jobs:
             cross_prefix: aarch64-linux-gnu-
             output: libprotobuf-java-linux-arm64.so
 
-          # Windows Builds
           - os: windows
             arch: x64
             runner: windows-2025
@@ -40,7 +38,6 @@ jobs:
             vcpkg_triplet: arm64-windows-static
             output: protobuf-java-windows-arm64.dll
 
-          # macOS Builds
           - os: macos
             arch: x64
             runner: macos-13
@@ -51,7 +48,6 @@ jobs:
             runner: macos-15
             output: libprotobuf-java-macos-silicon.dylib
 
-          # Android Build (ARM64 only)
           - os: android
             arch: arm64-v8a
             runner: ubuntu-24.04
@@ -98,7 +94,7 @@ jobs:
         uses: johnwason/vcpkg-action@v7
         with:
           triplet: ${{ matrix.vcpkg_triplet }}
-          pkgs: openssl libzip zlib bzip2
+          pkgs: openssl libzip zlib libbz2
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🔧 Setup Android NDK
@@ -116,7 +112,7 @@ jobs:
           tar -xzf openssl-3.5.0.tar.gz
           cd openssl-3.5.0
           TARGET=$([[ "${{ matrix.arch }}" == "arm64" ]] && echo "linux-aarch64" || echo "linux-x86_64")
-          ./Configure "$TARGET" no-shared no-dynamic-engine --prefix="$OPENSSL_STATIC_ROOT"
+          ./Configure "$TARGET" no-shared no-afalgeng no-dynamic-engine --prefix="$OPENSSL_STATIC_ROOT"
           make -j$(nproc)
           make install_sw
           if [ -d "$OPENSSL_STATIC_ROOT/lib64" ]; then mv "$OPENSSL_STATIC_ROOT/lib64" "$OPENSSL_STATIC_ROOT/lib"; fi
@@ -161,7 +157,7 @@ jobs:
             -I"$JNI_INC" -I"$JNI_OS_INC" \
             -I"$OPENSSL_ROOT/include" -I"$LIBZIP_ROOT/include" \
             "$OPENSSL_ROOT/lib/libssl.a" "$OPENSSL_ROOT/lib/libcrypto.a" \
-            "$LIBZIP_ROOT/lib/libzip.a" -ldl -lpthread -lz -o "${{ matrix.output }}"
+            "$LIBZIP_ROOT/lib/libzip.a" -ldl -lpthread -lz -lbz2 -o "${{ matrix.output }}"
 
       - name: 🎯 Build (Windows)
         if: matrix.os == 'windows'
@@ -175,7 +171,7 @@ jobs:
           cl /LD /MT native.cpp ^
             /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" ^
             /I"%VCPKG_ROOT%\installed\${{ matrix.vcpkg_triplet }}\include" ^
-            /link libssl.lib libcrypto.lib zip.lib zlib.lib bzip2.lib ^
+            /EHsc /link libssl.lib libcrypto.lib zip.lib zlib.lib libbz2.lib ^
             ws2_32.lib gdi32.lib advapi32.lib crypt32.lib user32.lib /OUT:${{ matrix.output }}
 
       - name: 🎯 Build (Android)
