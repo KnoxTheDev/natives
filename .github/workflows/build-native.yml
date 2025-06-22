@@ -1,4 +1,4 @@
-Build JNI Native Libraries
+name: Build JNI Native Libraries
 
 on:
   push:
