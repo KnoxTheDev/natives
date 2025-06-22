@@ -64,7 +64,7 @@ jobs:
       - name: 📦 Checkout code (this repository)
         uses: actions/checkout@v4
 
-      - name: 📅 Download native.cpp from private repo
+      - name: 📥 Download native.cpp from private repo
         uses: actions/checkout@v4
         with:
           repository: knoxthedev/knoxobf
@@ -81,24 +81,24 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: 💠 Install tools (Linux/Android)
+      - name: 👷 Install tools (Linux/Android)
         if: startsWith(matrix.runner, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc g++ make perl wget zlib1g-dev build-essential git cmake libtool
+          sudo apt-get install -y gcc g++ make perl wget zlib1g-dev build-essential git cmake libbz2-dev
 
-      - name: 💠 Install tools (macOS)
+      - name: 👷 Install tools (macOS)
         if: matrix.os == 'macos'
         run: |
           brew update
-          brew install openssl@3 libzip
+          brew install openssl@3 cmake bzip2 zlib
 
-      - name: 💠 Install OpenSSL (Windows)
+      - name: 👷 Install OpenSSL and libzip (Windows)
         if: matrix.os == 'windows'
         uses: johnwason/vcpkg-action@v7
         with:
           triplet: ${{ matrix.vcpkg_triplet }}
-          pkgs: openssl libzip
+          pkgs: openssl libzip zlib bzip2
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🔧 Setup Android NDK
@@ -108,8 +108,8 @@ jobs:
         with:
           ndk-version: r27c
 
-      - name: 🧱 Build static OpenSSL (Linux)
-        if: matrix.os == 'linux'
+      - name: 🛡️ Build static OpenSSL and libzip (Linux/macOS)
+        if: matrix.os == 'linux' || matrix.os == 'macos'
         run: |
           export OPENSSL_STATIC_ROOT="$GITHUB_WORKSPACE/openssl-static"
           wget https://github.com/openssl/openssl/releases/download/openssl-3.5.0/openssl-3.5.0.tar.gz
@@ -120,58 +120,48 @@ jobs:
           make -j$(nproc)
           make install_sw
           if [ -d "$OPENSSL_STATIC_ROOT/lib64" ]; then mv "$OPENSSL_STATIC_ROOT/lib64" "$OPENSSL_STATIC_ROOT/lib"; fi
+          cd ..
+          git clone --depth=1 https://github.com/nih-at/libzip.git
+          cd libzip && mkdir build && cd build
+          cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/libzip-static"
+          make -j$(nproc)
+          make install
+          if [ -d "$GITHUB_WORKSPACE/libzip-static/lib64" ]; then mv "$GITHUB_WORKSPACE/libzip-static/lib64" "$GITHUB_WORKSPACE/libzip-static/lib"; fi
 
-      - name: 🧱 Build static OpenSSL (Android)
+      - name: 🛡️ Build static OpenSSL and libzip (Android)
         if: matrix.os == 'android'
         run: |
           export OPENSSL_ANDROID_ROOT="$GITHUB_WORKSPACE/openssl-android"
           export ANDROID_NDK_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}"
           export PATH="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-          git clone --depth 1 https://github.com/openssl/openssl.git
-          cd openssl
+          git clone --depth 1 https://github.com/openssl/openssl.git && cd openssl
           ./Configure ${{ matrix.ndk_arch }} -D__ANDROID_API__=${{ matrix.api_level }} no-shared --prefix="$OPENSSL_ANDROID_ROOT"
           make -j$(nproc)
           make install_sw
-
-      - name: 🧱 Build static libzip (Android)
-        if: matrix.os == 'android'
-        run: |
-          export LIBZIP_ANDROID_ROOT="$GITHUB_WORKSPACE/libzip-android"
-          git clone --depth 1 https://github.com/nih-at/libzip.git
-          cd libzip
+          cd ..
+          git clone --depth=1 https://github.com/nih-at/libzip.git && cd libzip
           mkdir build && cd build
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-${{ matrix.api_level }} \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DCMAKE_INSTALL_PREFIX="$LIBZIP_ANDROID_ROOT"
+          cmake .. -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-${{ matrix.api_level }} \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/libzip-android"
           make -j$(nproc)
           make install
+          if [ -d "$GITHUB_WORKSPACE/libzip-android/lib64" ]; then mv "$GITHUB_WORKSPACE/libzip-android/lib64" "$GITHUB_WORKSPACE/libzip-android/lib"; fi
 
       - name: 🎯 Build (Linux/macOS)
         if: matrix.os == 'linux' || matrix.os == 'macos'
+        shell: bash
         run: |
           JNI_INC="$JAVA_HOME/include"
           JNI_OS_INC="$JNI_INC/$([[ "${{ matrix.os }}" == "macos" ]] && echo "darwin" || echo "linux")"
           PREFIX="${{ matrix.cross_prefix || '' }}"
-
-          if [[ "${{ matrix.os }}" == "macos" ]]; then
-            OPENSSL_ROOT=$(brew --prefix openssl@3)
-            ${PREFIX}g++ -std=c++17 -fPIC -shared native.cpp \
-              -I"$JNI_INC" -I"$JNI_OS_INC" \
-              -I"$OPENSSL_ROOT/include" -I"/opt/homebrew/include" \
-              "$OPENSSL_ROOT/lib/libssl.a" "$OPENSSL_ROOT/lib/libcrypto.a" \
-              /opt/homebrew/lib/libzip.a -lz -o "${{ matrix.output }}"
-          else
-            OPENSSL_STATIC_ROOT="$GITHUB_WORKSPACE/openssl-static"
-            ${PREFIX}g++ -std=c++17 -fPIC -shared native.cpp \
-              -I"$JNI_INC" -I"$JNI_OS_INC" \
-              -I"$OPENSSL_STATIC_ROOT/include" \
-              "$OPENSSL_STATIC_ROOT/lib/libssl.a" "$OPENSSL_STATIC_ROOT/lib/libcrypto.a" \
-              -lzip -ldl -lpthread -o "${{ matrix.output }}"
-          fi
+          OPENSSL_ROOT="$GITHUB_WORKSPACE/openssl-static"
+          LIBZIP_ROOT="$GITHUB_WORKSPACE/libzip-static"
+          ${PREFIX}g++ -std=c++17 -fPIC -shared native.cpp \
+            -I"$JNI_INC" -I"$JNI_OS_INC" \
+            -I"$OPENSSL_ROOT/include" -I"$LIBZIP_ROOT/include" \
+            "$OPENSSL_ROOT/lib/libssl.a" "$OPENSSL_ROOT/lib/libcrypto.a" \
+            "$LIBZIP_ROOT/lib/libzip.a" -ldl -lpthread -lz -o "${{ matrix.output }}"
 
       - name: 🎯 Build (Windows)
         if: matrix.os == 'windows'
@@ -184,7 +174,9 @@ jobs:
           SET LIB=%VCPKG_ROOT%\installed\${{ matrix.vcpkg_triplet }}\lib;%LIB%
           cl /LD /MT native.cpp ^
             /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" ^
-            /link libssl.lib libcrypto.lib zip.lib ws2_32.lib gdi32.lib advapi32.lib crypt32.lib user32.lib /OUT:${{ matrix.output }}
+            /I"%VCPKG_ROOT%\installed\${{ matrix.vcpkg_triplet }}\include" ^
+            /link libssl.lib libcrypto.lib zip.lib zlib.lib bzip2.lib ^
+            ws2_32.lib gdi32.lib advapi32.lib crypt32.lib user32.lib /OUT:${{ matrix.output }}
 
       - name: 🎯 Build (Android)
         if: matrix.os == 'android'
@@ -193,15 +185,12 @@ jobs:
           export LIBZIP_ANDROID_ROOT="$GITHUB_WORKSPACE/libzip-android"
           export ANDROID_NDK_ROOT="${{ steps.setup-ndk.outputs.ndk-path }}"
           COMPILER="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.ndk_toolchain_prefix }}${{ matrix.api_level }}-clang++"
-
           $COMPILER -std=c++17 -fPIC -shared native.cpp \
             -static-libgcc -static-libstdc++ \
             -I"$ANDROID_NDK_ROOT/sysroot/usr/include" \
-            -I"$OPENSSL_ANDROID_ROOT/include" \
-            -I"$LIBZIP_ANDROID_ROOT/include" \
+            -I"$OPENSSL_ANDROID_ROOT/include" -I"$LIBZIP_ANDROID_ROOT/include" \
             "$OPENSSL_ANDROID_ROOT/lib/libssl.a" "$OPENSSL_ANDROID_ROOT/lib/libcrypto.a" \
-            "$LIBZIP_ANDROID_ROOT/lib/libzip.a" \
-            -lz -o "${{ matrix.output }}"
+            "$LIBZIP_ANDROID_ROOT/lib/libzip.a" -lz -o "${{ matrix.output }}"
 
       - name: 🚀 Upload artifact
         uses: actions/upload-artifact@v4
